@@ -158,16 +158,51 @@ fn getArchitecture() ![]const u8 {
     };
 }
 
+fn getUsername() ![]const u8 {
+    const allocator = std.heap.page_allocator;
+
+    if (std.process.getEnvVarOwned(allocator, "USER")) |user| {
+        return user;
+    } else |_| {
+        if (std.process.getEnvVarOwned(allocator, "USERNAME")) |user| {
+            return user;
+        } else |_| {
+            return "Unknown";
+        }
+    }
+}
+
+fn getHostname() ![]const u8 {
+    const allocator = std.heap.page_allocator;
+    const file = std.fs.openFileAbsolute("/etc/hostname", .{ .mode = .read_only }) catch |err| {
+        std.debug.print("Failed to open /etc/hostname: {}\n", .{err});
+        return "Unknown";
+    };
+    defer file.close();
+
+    var buffer: [256]u8 = undefined;
+    const bytes_read = try file.readAll(&buffer);
+    const hostname = std.mem.trim(u8, buffer[0..bytes_read], &std.ascii.whitespace);
+    return try allocator.dupe(u8, hostname);
+}
+
 pub fn main() !void {
+    const allocator = std.heap.page_allocator;
     const stdout = std.io.getStdOut().writer();
     try stdout.print("**********NERD**FETCH****************\n", .{});
 
+    const username = try getUsername();
+    defer allocator.free(username);
+    const hostname = try getHostname();
+    defer allocator.free(hostname);
+    try stdout.print("User: {s}@{s}\n", .{ username, hostname });
+
     const os_name = try getOsName();
-    try stdout.print("Operating System: {s}\n", .{os_name});
+    try stdout.print("OS: {s}\n", .{os_name});
 
     const cpu_model_name = try getCPUModelAndArch();
-    try stdout.print("CPU Model : {s}\n", .{cpu_model_name});
+    try stdout.print("CPU: {s}\n", .{cpu_model_name});
 
     const cpu_architecture = try getArchitecture();
-    try stdout.print("CPU Architecture: {s}\n", .{cpu_architecture});
+    try stdout.print("CPU Arch: {s}\n", .{cpu_architecture});
 }
