@@ -158,6 +158,38 @@ fn getArchitecture() ![]const u8 {
     };
 }
 
+fn getUptime() ![]const u8 {
+    const allocator = std.heap.page_allocator;
+    var buffer: [256]u8 = undefined;
+    const uptime_file = try std.fs.openFileAbsolute("/proc/uptime", .{ .mode = .read_only });
+    defer uptime_file.close();
+    const bytes_read = try uptime_file.readAll(&buffer);
+    const uptime_str = std.mem.trim(u8, buffer[0..bytes_read], &std.ascii.whitespace);
+
+    var uptime_parts = std.mem.split(u8, uptime_str, " ");
+    const uptime_seconds_str = uptime_parts.next() orelse return error.InvalidUptimeFormat;
+
+    const uptime_seconds = std.fmt.parseFloat(f64, uptime_seconds_str) catch |err| {
+        std.debug.print("Failed to parse uptime: {}\n", .{err});
+        return allocator.dupe(u8, "Unknown");
+    };
+
+    const days = @floor(uptime_seconds / (24 * 60 * 60));
+    const hours = @floor(@mod(uptime_seconds, 24 * 60 * 60) / (60 * 60));
+    const minutes = @floor(@mod(uptime_seconds, 60 * 60) / 60);
+
+    return std.fmt.allocPrint(allocator, "{d} days, {d} hours, {d} minutes", .{ days, hours, minutes });
+}
+
+fn getShell() ![]const u8 {
+    const allocator = std.heap.page_allocator;
+    if (std.process.getEnvVarOwned(allocator, "SHELL")) |shell| {
+        return shell;
+    } else |_| {
+        return "Unknown";
+    }
+}
+
 fn getUsername() ![]const u8 {
     const allocator = std.heap.page_allocator;
 
@@ -200,9 +232,29 @@ pub fn main() !void {
     const os_name = try getOsName();
     try stdout.print("OS: {s}\n", .{os_name});
 
+    // const uptime = getUptime() catch |err| {
+    //     std.debug.print("Error getting uptime: {}\n", .{err});
+    //     try allocator.free(try allocator.dupe(u8, "Unknown"));
+    //     return;
+    // };
+    // defer allocator.free(uptime);
+    // try stdout.print("Uptime: {s}\n", .{uptime});
+
+    const shell = try getShell();
+    defer allocator.free(shell);
+    try stdout.print("Shell: {s}\n", .{shell});
+
     const cpu_model_name = try getCPUModelAndArch();
     try stdout.print("CPU: {s}\n", .{cpu_model_name});
 
     const cpu_architecture = try getArchitecture();
     try stdout.print("CPU Arch: {s}\n", .{cpu_architecture});
+
+    // const memory_usage = try getMemoryUsage();
+    // defer allocator.free(memory_usage);
+    // try stdout.print("Memory: {s}\n", .{memory_usage});
+    //
+    // const local_ip = try getLocalIPAddress();
+    // defer allocator.free(local_ip);
+    // try stdout.print("Local IP: {s}\n", .{local_ip});
 }
